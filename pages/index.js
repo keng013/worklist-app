@@ -1,33 +1,63 @@
 import { getIronSession } from "iron-session";
 import { sessionOptions } from "../lib/session";
-import { query } from "../lib/db";
+import { query } from "../lib/db"; // Still used for initial modalities fetch
 import { useRouter } from "next/router";
+import { useState, useEffect } from "react";
 
-// Component หลักสำหรับหน้า Worklist
-export default function WorklistPage({
-  user,
-  worklist,
-  initialFilters,
-  totalCount,
-  currentPage,
-  limit,
-  totalPages,
-  modalities,
-}) {
+export default function WorklistPage({ user, initialModalities }) {
   const router = useRouter();
+
+  // State สำหรับจัดการข้อมูลฝั่ง Client
+  const [worklist, setWorklist] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // useEffect จะทำงานทุกครั้งที่ URL query เปลี่ยน (เช่น เปลี่ยนหน้า, ฟิลเตอร์)
+  useEffect(() => {
+    // router.isReady เพื่อให้แน่ใจว่า query params พร้อมใช้งานแล้ว
+    if (!router.isReady) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    const params = new URLSearchParams(router.query);
+
+    // เรียก API เพื่อดึงข้อมูล
+    fetch(`/api/worklist?${params.toString()}`)
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error("Failed to fetch data from the server.");
+        }
+        return res.json();
+      })
+      .then((data) => {
+        setWorklist(data.worklist);
+        setTotalCount(data.totalCount);
+        setCurrentPage(data.currentPage);
+        setTotalPages(data.totalPages);
+        setLimit(parseInt(router.query.limit) || 10);
+      })
+      .catch((err) => {
+        console.error(err);
+        setError(err.message);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [router.isReady, router.query]);
 
   const handleLogout = async () => {
     await fetch("/api/logout");
     router.push("/login");
   };
 
-  // Function to handle navigation and filter changes
   const handleNavigation = (newParams) => {
     const currentQuery = { ...router.query };
-    const params = new URLSearchParams({
-      ...currentQuery,
-      ...newParams,
-    });
+    const params = new URLSearchParams({ ...currentQuery, ...newParams });
     router.push(`/?${params.toString()}`);
   };
 
@@ -36,11 +66,9 @@ export default function WorklistPage({
     const formData = new FormData(e.target);
     const newFilters = {};
     for (const [key, value] of formData.entries()) {
-      if (value) {
-        newFilters[key] = value;
-      }
+      if (value) newFilters[key] = value;
+      else delete router.query[key];
     }
-    // When applying a new filter, always go back to page 1
     handleNavigation({ ...newFilters, page: 1 });
   };
 
@@ -48,9 +76,7 @@ export default function WorklistPage({
     handleNavigation({ limit: e.target.value, page: 1 });
   };
 
-  // Function to handle resetting filters
   const handleResetFilter = () => {
-    // Simply navigate to the base URL to clear all filters from query string
     router.push("/");
   };
 
@@ -77,7 +103,7 @@ export default function WorklistPage({
             onSubmit={handleFilterSubmit}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
           >
-            {/* Row 1 */}
+            {/* Filters */}
             <div>
               <label
                 htmlFor="patient_id"
@@ -89,7 +115,7 @@ export default function WorklistPage({
                 type="text"
                 name="patient_id"
                 id="patient_id"
-                defaultValue={initialFilters.patient_id}
+                defaultValue={router.query.patient_id || ""}
                 className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               />
             </div>
@@ -104,7 +130,7 @@ export default function WorklistPage({
                 type="text"
                 name="accession_num"
                 id="accession_num"
-                defaultValue={initialFilters.accession_num}
+                defaultValue={router.query.accession_num || ""}
                 className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               />
             </div>
@@ -118,11 +144,11 @@ export default function WorklistPage({
               <select
                 name="modality"
                 id="modality"
-                defaultValue={initialFilters.modality}
+                defaultValue={router.query.modality || ""}
                 className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               >
                 <option value="">All</option>
-                {modalities.map((mod) => (
+                {initialModalities.map((mod) => (
                   <option key={mod} value={mod}>
                     {mod}
                   </option>
@@ -139,7 +165,7 @@ export default function WorklistPage({
               <select
                 name="status"
                 id="status"
-                defaultValue={initialFilters.status}
+                defaultValue={router.query.status || ""}
                 className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               >
                 <option value="">All</option>
@@ -148,7 +174,6 @@ export default function WorklistPage({
                 <option value="COMPLETED">COMPLETED</option>
               </select>
             </div>
-            {/* Row 2 */}
             <div>
               <label
                 htmlFor="start_date"
@@ -160,7 +185,7 @@ export default function WorklistPage({
                 type="date"
                 name="start_date"
                 id="start_date"
-                defaultValue={initialFilters.start_date}
+                defaultValue={router.query.start_date || ""}
                 className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               />
             </div>
@@ -175,7 +200,7 @@ export default function WorklistPage({
                 type="date"
                 name="end_date"
                 id="end_date"
-                defaultValue={initialFilters.end_date}
+                defaultValue={router.query.end_date || ""}
                 className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               />
             </div>
@@ -197,6 +222,7 @@ export default function WorklistPage({
           </form>
         </div>
 
+        {/* Table and Loading/Error States */}
         <div className="overflow-x-auto bg-white rounded-lg shadow-md">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -214,10 +240,19 @@ export default function WorklistPage({
                   Accession No.
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Study DESC
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Modality
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   AE Title
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  End Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  End Time
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
@@ -225,45 +260,77 @@ export default function WorklistPage({
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {worklist.map((item) => (
-                <tr key={item.study_instance_uid} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
-                    {item.patient_id}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
-                    {item.patient_name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
-                    {item.sched_start_date}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
-                    {item.accession_num}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
-                    {item.modality}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
-                    {item.perfrmd_aet}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    <span
-                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        item.perfrmd_status === "COMPLETED"
-                          ? "bg-green-100 text-green-800"
-                          : item.perfrmd_status === "IN PROGRESS"
-                          ? "bg-blue-100 text-blue-800"
-                          : "bg-yellow-100 text-yellow-800"
-                      }`}
-                    >
-                      {item.perfrmd_status || "SCHEDULED"}
-                    </span>
+              {isLoading ? (
+                <tr>
+                  <td colSpan="10" className="text-center py-10">
+                    Loading...
                   </td>
                 </tr>
-              ))}
+              ) : error ? (
+                <tr>
+                  <td colSpan="10" className="text-center py-10 text-red-500">
+                    Error: {error}
+                  </td>
+                </tr>
+              ) : worklist.length > 0 ? (
+                worklist.map((item) => (
+                  <tr
+                    key={item.study_instance_uid}
+                    className="hover:bg-gray-50"
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                      {item.patient_id}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                      {item.patient_name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                      {item.sched_start_date}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                      {item.accession_num}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800 truncate max-w-xs">
+                      {item.sched_proc_desc}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                      {item.modality}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                      {item.perfrmd_aet}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                      {item.perfrmd_end_date}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                      {item.perfrmd_end_time}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <span
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          item.perfrmd_status === "COMPLETED"
+                            ? "bg-green-100 text-green-800"
+                            : item.perfrmd_status === "IN PROGRESS"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-yellow-100 text-yellow-800"
+                        }`}
+                      >
+                        {item.perfrmd_status || "SCHEDULED"}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="10" className="text-center py-10">
+                    No worklist items found.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
-        {/* Pagination Controls */}
+
         <div className="mt-4 flex items-center justify-between">
           <div className="flex items-center space-x-2 text-sm text-gray-700">
             <span>Rows per page:</span>
@@ -287,14 +354,14 @@ export default function WorklistPage({
             </span>
             <button
               onClick={() => handleNavigation({ page: currentPage - 1 })}
-              disabled={currentPage <= 1}
+              disabled={currentPage <= 1 || isLoading}
               className="px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Previous
             </button>
             <button
               onClick={() => handleNavigation({ page: currentPage + 1 })}
-              disabled={currentPage >= totalPages}
+              disabled={currentPage >= totalPages || isLoading}
               className="px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Next
@@ -311,17 +378,20 @@ export default function WorklistPage({
   );
 }
 
-export async function getServerSideProps({ req, res, query: urlQuery }) {
+// getServerSideProps ถูกปรับให้ง่ายลง
+// ทำหน้าที่ป้องกันหน้าและดึงข้อมูลเริ่มต้น (เช่น Modalities)
+export async function getServerSideProps({ req, res }) {
   const session = await getIronSession(req, res, sessionOptions);
   const user = session.user;
 
+  // ป้องกัน Route ฝั่ง Server
   if (!user || !user.isLoggedIn) {
     return {
       redirect: { destination: "/login", permanent: false },
     };
   }
 
-  // Fetch distinct modalities for the dropdown
+  // ดึงรายชื่อ Modality สำหรับ dropdown ตอนโหลดหน้าครั้งแรก
   let modalities = [];
   try {
     const modalityResult = await query(`
@@ -335,108 +405,11 @@ export async function getServerSideProps({ req, res, query: urlQuery }) {
     console.error("Error fetching modalities:", error);
   }
 
-  // Pagination and Filter parameters
-  const { patient_id, accession_num, modality, status } = urlQuery;
-  let { start_date, end_date } = urlQuery;
-  const page = parseInt(urlQuery.page) || 1;
-  const limit = parseInt(urlQuery.limit) || 10;
-  const offset = (page - 1) * limit;
-
-  if (!start_date || !end_date) {
-    const today = new Date();
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(today.getDate() - 7);
-    start_date = sevenDaysAgo.toISOString().split("T")[0];
-    end_date = today.toISOString().split("T")[0];
-  }
-
-  // Build WHERE clause
-  const conditions = [];
-  const params = {};
-  if (patient_id) {
-    conditions.push("patient_id LIKE @patient_id");
-    params.patient_id = `%${patient_id}%`;
-  }
-  if (accession_num) {
-    conditions.push("accession_num LIKE @accession_num");
-    params.accession_num = `%${accession_num}%`;
-  }
-  if (modality) {
-    conditions.push("modality = @modality");
-    params.modality = modality;
-  }
-  if (status) {
-    if (status === "SCHEDULED") {
-      conditions.push(
-        "(perfrmd_status IS NULL OR perfrmd_status = '' OR perfrmd_status = 'SCHEDULED')"
-      );
-    } else {
-      conditions.push("perfrmd_status = @status");
-      params.status = status;
-    }
-  }
-  if (start_date) {
-    conditions.push("sched_start_date >= @start_date");
-    params.start_date = start_date.replace(/-/g, "");
-  }
-  if (end_date) {
-    conditions.push("sched_start_date <= @end_date");
-    params.end_date = end_date.replace(/-/g, "");
-  }
-  const whereClause =
-    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
-  // Main Query with Pagination and Total Count
-  const mainQuery = `
-        SELECT 
-            study_instance_uid, patient_id, patient_name, accession_num, modality, 
-            sched_start_date, sched_start_time, perfrmd_status, perfrmd_aet,
-            COUNT(*) OVER() as total_count
-        FROM worklist
-        ${whereClause}
-        ORDER BY sched_start_date DESC, sched_start_time DESC
-        OFFSET @offset ROWS
-        FETCH NEXT @limit ROWS ONLY
-    `;
-
-  try {
-    const result = await query(mainQuery, { ...params, offset, limit });
-    const worklist = result.recordset;
-    const totalCount = worklist.length > 0 ? worklist[0].total_count : 0;
-    const totalPages = Math.ceil(totalCount / limit);
-
-    return {
-      props: {
-        user: user,
-        worklist: JSON.parse(JSON.stringify(worklist)),
-        totalCount,
-        currentPage: page,
-        limit,
-        totalPages,
-        modalities, // Pass the fetched modalities to the page
-        initialFilters: {
-          patient_id: patient_id || "",
-          accession_num: accession_num || "",
-          modality: modality || "",
-          status: status || "",
-          start_date: start_date || "",
-          end_date: end_date || "",
-        },
-      },
-    };
-  } catch (error) {
-    console.error("Error fetching worklist:", error);
-    return {
-      props: {
-        user: user,
-        worklist: [],
-        totalCount: 0,
-        currentPage: 1,
-        limit,
-        totalPages: 1,
-        modalities,
-        initialFilters: {},
-      },
-    };
-  }
+  // ส่ง props ที่จำเป็นไปให้ Component
+  return {
+    props: {
+      user,
+      initialModalities: modalities,
+    },
+  };
 }
