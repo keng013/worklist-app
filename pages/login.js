@@ -19,7 +19,7 @@ export default function LoginPage() {
 
     try {
       // ส่ง request ไปยัง API /api/login
-      const response = await fetch("/api/login", {
+      const response = await fetch("/worklist/api/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -49,7 +49,7 @@ export default function LoginPage() {
       {/* การ์ด Glass Morphism */}
       <div className="w-full max-w-md bg-white/30 backdrop-blur-md rounded-2xl shadow-2xl p-8 space-y-8">
         <div className="text-center">
-          <h2 className="text-4xl font-bold text-white">Worklist Login</h2>
+          <h2 className="text-4xl font-bold text-white">RKH PACS Worklist</h2>
           <p className="mt-2 text-white/80">
             Welcome back! Please sign in to continue.
           </p>

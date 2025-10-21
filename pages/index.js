@@ -27,7 +27,7 @@ export default function WorklistPage({ user, initialModalities }) {
     const params = new URLSearchParams(router.query);
 
     // เรียก API เพื่อดึงข้อมูล
-    fetch(`/api/worklist?${params.toString()}`)
+    fetch(`/worklist/api/worklist?${params.toString()}`)
       .then((res) => {
         if (!res.ok) {
           throw new Error("Failed to fetch data from the server.");
@@ -51,7 +51,7 @@ export default function WorklistPage({ user, initialModalities }) {
   }, [router.isReady, router.query]);
 
   const handleLogout = async () => {
-    await fetch("/api/logout");
+    await fetch("/worklist/api/logout");
     router.push("/login");
   };
 

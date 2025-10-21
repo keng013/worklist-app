@@ -65,7 +65,7 @@ export default async function handler(req, res) {
 
   // 5. Construct the main SQL query for fetching data and total count
   const mainQuery = `
-        SELECT 
+        SELECT
             study_instance_uid, patient_id, patient_name, accession_num, modality, 
             sched_start_date, sched_start_time, perfrmd_status, perfrmd_aet,
             sched_proc_desc, perfrmd_end_date, perfrmd_end_time,
