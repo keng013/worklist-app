@@ -24,3 +24,4 @@ npm install xlsx file-saver
 npm install axios
 npm install date-fns
 npm install recharts
+npm install bcryptjs

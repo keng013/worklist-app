@@ -3,7 +3,8 @@ import { apiClient } from "../lib/apiConfig";
 import { useWorklistRouter } from "../hooks/useWorklistRouter";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
-
+import { getIronSession } from "iron-session";
+import { sessionOptions } from "../lib/session";
 // Import components
 import Select from "../components/ui/Select";
 import Pagination from "../components/ui/Pagination";
@@ -346,3 +347,16 @@ const PACSUtilizationPage = () => {
 };
 
 export default PACSUtilizationPage;
+
+// GSSP นี้ใช้สำหรับตรวจสอบสิทธิ์ (Auth) เท่านั้น
+export async function getServerSideProps({ req, res }) {
+  const session = await getIronSession(req, res, sessionOptions);
+  const user = session.user;
+
+  if (!user || !user.isLoggedIn) {
+    return { redirect: { destination: "/login", permanent: false } };
+  }
+
+  // ส่ง user prop ไปให้ _app.js และ Layout
+  return { props: { user } };
+}

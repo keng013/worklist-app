@@ -1,59 +1,39 @@
 import { getIronSession } from "iron-session";
-import { sessionOptions } from "../../lib/session"; // อ้างอิง Path ให้ถูกต้อง
-import { query } from "../../lib/db"; // อ้างอิง Path ให้ถูกต้อง
-import bcrypt from "bcryptjs";
+import { sessionOptions } from "../../lib/session";
+import { query } from "../../lib/db";
+import bcrypt from "bcryptjs"; // 👈 [สำคัญ] ต้อง npm install bcryptjs
 
-// ไม่ต้องใช้ withSessionRoute แล้ว
-export default async function loginRoute(req, res) {
-  // อนุญาตเฉพาะเมธอด POST
-  if (req.method !== "POST") {
-    return res.status(405).json({ message: "Method Not Allowed" });
-  }
-
+export default async function loginHandler(req, res) {
   const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res
-      .status(400)
-      .json({ message: "Username and password are required." });
-  }
+  const session = await getIronSession(req, res, sessionOptions);
 
   try {
-    // 1. ค้นหาผู้ใช้จากฐานข้อมูล
+    // 1. ค้นหา User (ดึงมาทั้งแถว)
     const result = await query(
-      `SELECT user_id, username, password_hash FROM wkl_users WHERE username = @username`,
+      "SELECT * FROM wkl_users WHERE username = @username",
       { username }
     );
     const user = result.recordset[0];
 
-    // ถ้าไม่พบผู้ใช้
-    if (!user) {
-      return res.status(401).json({ message: "Invalid username or password." });
+    // 2. ตรวจสอบ User และ รหัสผ่าน
+    if (user && (await bcrypt.compare(password, user.password_hash))) {
+      // 3. [สำคัญ] บันทึก Role และข้อมูลอื่นลง Session
+      session.user = {
+        isLoggedIn: true,
+        user_id: user.user_id, // 👈 จำเป็นสำหรับ api/reset-password.js
+        username: user.username,
+        full_name: user.full_name,
+        role: user.role, // 👈 จำเป็นสำหรับ api/users.js และหน้า setting
+      };
+      await session.save();
+
+      return res.status(200).json(session.user);
+    } else {
+      // 4. ถ้า User หรือ รหัสผ่านผิด
+      return res.status(401).json({ message: "Invalid username or password" });
     }
-
-    // 2. เปรียบเทียบรหัสผ่าน
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-
-    // ถ้ารหัสผ่านไม่ถูกต้อง
-    if (!isPasswordValid) {
-      return res.status(401).json({ message: "Invalid username or password." });
-    }
-
-    // 3. เข้าถึง session ด้วย getIronSession
-    const session = await getIronSession(req, res, sessionOptions);
-
-    // 4. ตั้งค่าข้อมูล session
-    session.user = {
-      id: user.user_id,
-      username: user.username,
-      isLoggedIn: true,
-    };
-    // 5. บันทึก session
-    await session.save();
-
-    res.status(200).json({ isLoggedIn: true, username: user.username });
   } catch (error) {
-    console.error("Login API Error:", error);
-    res.status(500).json({ message: "An internal server error occurred." });
+    console.error("Login Error:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
   }
 }

@@ -2,8 +2,17 @@ import React, { useState, useEffect } from "react";
 import { getIronSession } from "iron-session";
 import { sessionOptions } from "../lib/session";
 import { apiClient } from "../lib/apiConfig";
-import DashboardBarChart from "../components/ui/DashboardBarChart"; // 👈 [ไฟล์ใหม่]
-import { Database, Image, HardDrive, BarChart3, Clock } from "lucide-react";
+import DashboardBarChart from "../components/ui/DashboardBarChart";
+import {
+  Database,
+  Image,
+  HardDrive,
+  BarChart3,
+  Clock,
+  ClipboardList, // 👈 [ใหม่]
+  RefreshCw, // 👈 [ใหม่]
+  CheckCircle, // 👈 [ใหม่]
+} from "lucide-react";
 
 // (API ของคุณส่ง YYYYMMDD และ HHMMSS)
 const formatDate = (dateStr) => {
@@ -15,6 +24,7 @@ const formatDate = (dateStr) => {
 };
 const formatTime = (timeNum) => {
   if (timeNum === null || timeNum === undefined) return "";
+  // แปลงตัวเลข (เช่น 93015) เป็น string "093015"
   const timeStr = Math.floor(timeNum).toString().padStart(6, "0");
   const hh = timeStr.substring(0, 2) || "00";
   const mm = timeStr.substring(2, 4) || "00";
@@ -78,7 +88,10 @@ export default function DashboardPage() {
         Today's Dashboard
       </h1>
 
-      {/* ----- Stat Cards ----- */}
+      {/* ----- PACS Stat Cards ----- */}
+      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+        PACS Stats
+      </h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         {isLoading ? (
           <>
@@ -108,7 +121,42 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* ----- Worklist Stat Cards ----- */}
+      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 mt-8">
+        Worklist Stats (Today)
+      </h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        {isLoading ? (
+          <>
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+          </>
+        ) : (
+          <>
+            <StatCard
+              title="Scheduled"
+              value={data?.worklistStats?.SCHEDULED || 0}
+              icon={<ClipboardList size={24} />}
+            />
+            <StatCard
+              title="In Progress"
+              value={data?.worklistStats?.["IN PROGRESS"] || 0}
+              icon={<RefreshCw size={24} />}
+            />
+            <StatCard
+              title="Completed"
+              value={data?.worklistStats?.COMPLETED || 0}
+              icon={<CheckCircle size={24} />}
+            />
+          </>
+        )}
+      </div>
+
       {/* ----- Charts ----- */}
+      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 mt-8">
+        Charts (Today)
+      </h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {isLoading ? (
           <>
@@ -134,7 +182,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ----- Recent Studies ----- */}
-      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 mt-8">
         Recent Studies
       </h2>
       <div className="overflow-x-auto bg-white/90 dark:bg-gray-900/90 backdrop-blur-md rounded-2xl shadow-lg">
@@ -174,9 +222,10 @@ export default function DashboardPage() {
                 </tr>
               ))
             ) : data?.recentStudies?.length > 0 ? (
-              data.recentStudies.map((study) => (
+              data.recentStudies.map((study, index) => (
                 <tr
-                  key={study.accession_number}
+                  // 👈 ใช้ index หรือ field ที่ unique กว่าถ้ามี
+                  key={study.accession_number + index}
                   className="hover:bg-gray-50/50 dark:hover:bg-gray-700/50"
                 >
                   <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowrap">
@@ -209,7 +258,6 @@ export default function DashboardPage() {
 }
 
 // GSSP นี้ใช้สำหรับตรวจสอบสิทธิ์ (Auth) เท่านั้น
-// ข้อมูลจะถูกดึงโดย client-side (useEffect) เพื่อให้หน้าเว็บโหลดเร็ว
 export async function getServerSideProps({ req, res }) {
   const session = await getIronSession(req, res, sessionOptions);
   const user = session.user;

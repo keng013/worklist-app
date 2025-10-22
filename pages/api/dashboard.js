@@ -1,7 +1,7 @@
 import { getIronSession } from "iron-session";
 import { sessionOptions } from "../../lib/session";
-import { query } from "../../lib/db"; // 👈 [สำคัญ] ตรวจสอบว่า lib/db.js ของคุณอยู่ที่นี่
-import { format } from "date-fns"; // 👈 [สำคัญ] ต้อง install: npm install date-fns
+import { query } from "../../lib/db";
+import { format } from "date-fns"; // (ต้อง install: npm install date-fns)
 
 /**
  * Helper: แปลง Date object เป็น YYYYMMDD (integer)
@@ -67,6 +67,17 @@ export default async function handler(req, res) {
       {}
     );
 
+    // 👈 [ใหม่] Query 6: Worklist Status Today
+    const worklistStatusQuery = query(
+      `SELECT 
+         COALESCE(NULLIF(perfrmd_status, ''), 'SCHEDULED') as status, 
+         COUNT(*) as statusCount 
+       FROM worklist 
+       WHERE sched_start_date = @today 
+       GROUP BY COALESCE(NULLIF(perfrmd_status, ''), 'SCHEDULED')`,
+      params
+    );
+
     // 3. Execute all queries in parallel
     const [
       studiesResult,
@@ -74,12 +85,14 @@ export default async function handler(req, res) {
       modalityResult,
       sourceAEResult,
       recentStudiesResult,
+      worklistStatusResult, // 👈 [ใหม่]
     ] = await Promise.all([
       studiesQuery,
       imagesQuery,
       modalityQuery,
       sourceAEQuery,
       recentStudiesQuery,
+      worklistStatusQuery, // 👈 [ใหม่]
     ]);
 
     // 4. Format the response
@@ -89,6 +102,18 @@ export default async function handler(req, res) {
       totalSizeMB:
         (imagesResult.recordset[0]?.totalSizeBytes || 0) / 1024 / 1024,
     };
+
+    // 👈 [ใหม่] 4b. Format Worklist Stats
+    const worklistStats = {
+      SCHEDULED: 0,
+      "IN PROGRESS": 0,
+      COMPLETED: 0,
+    };
+    worklistStatusResult.recordset.forEach((row) => {
+      if (worklistStats.hasOwnProperty(row.status)) {
+        worklistStats[row.status] = row.statusCount;
+      }
+    });
 
     const modalityChartData = modalityResult.recordset;
     const sourceAEChartData = sourceAEResult.recordset;
@@ -100,6 +125,7 @@ export default async function handler(req, res) {
       modalityChartData,
       sourceAEChartData,
       recentStudies,
+      worklistStats, // 👈 [ใหม่]
     });
   } catch (error) {
     console.error("API Dashboard Error:", error);
