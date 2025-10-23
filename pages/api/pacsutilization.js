@@ -1,30 +1,26 @@
 import { getIronSession } from "iron-session";
 import { sessionOptions } from "../../lib/session";
-import { query } from "../../lib/db"; // 👈 ตรวจสอบ path
+import { query } from "../../lib/db";
 
-// Helper to convert YYYY-MM-DD to YYYYMMDD integer
+// ✅ แปลงวันที่เป็น integer (ถ้าจำเป็น)
 const convertDateToInteger = (dateStr) => {
   if (!dateStr) return null;
   return parseInt(dateStr.replace(/-/g, ""), 10);
 };
-
 export default async function handler(req, res) {
   const session = await getIronSession(req, res, sessionOptions);
   const user = session.user;
 
-  // 1. Authentication Check
   if (!user || !user.isLoggedIn) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
-  // 2. Extract query parameters
-  const { source_ae, modality } = req.query; // 👈 [เพิ่ม] modality
+  const { source_ae, modality } = req.query;
   let { start_date, end_date } = req.query;
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
 
-  // 3. Set default date range if not provided (7 days)
   if (!start_date || !end_date) {
     const today = new Date();
     const sevenDaysAgo = new Date();
@@ -33,7 +29,7 @@ export default async function handler(req, res) {
     end_date = today.toISOString().split("T")[0];
   }
 
-  // 4. Build WHERE clause dynamically
+  // 4. Build WHERE clause (ปรับเล็กน้อย)
   const conditions = [];
   const params = {};
 
@@ -41,67 +37,66 @@ export default async function handler(req, res) {
   const endDateInt = convertDateToInteger(end_date);
 
   if (startDateInt) {
-    conditions.push("s.study_date >= @start_date");
+    // ❌ ไม่ใช้ s.study_date
+    // ✅ ใช้ study_date
+    conditions.push("study_date >= @start_date");
     params.start_date = startDateInt;
   }
   if (endDateInt) {
-    conditions.push("s.study_date <= @end_date");
+    conditions.push("study_date <= @end_date");
     params.end_date = endDateInt;
   }
   if (source_ae) {
-    conditions.push("i.source_ae = @source_ae");
+    // ❌ ไม่ใช้ i.source_ae
+    // ✅ ใช้ source_ae
+    conditions.push("source_ae = @source_ae");
     params.source_ae = source_ae;
   }
   if (modality) {
-    // 👈 [เพิ่ม] Filter Modality
-    conditions.push("se.modality = @modality");
+    // ❌ ไม่ใช้ se.modality
+    // ✅ ใช้ modality
+    conditions.push("modality = @modality");
     params.modality = modality;
   }
 
   const whereClause =
     conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-  // 5. Construct the main SQL query
+  // 5. [ปรับปรุง] Construct SQL queries (ง่ายขึ้นมาก!)
+
+  const countQuery = `
+    SELECT COUNT(*) as total_count 
+    FROM dbo.StudyUtilizationSummary
+    ${whereClause}
+  `;
+
   const mainQuery = `
-    WITH GroupedData AS (
-      SELECT
-        p.ptn_id,
-        p.ptn_name,
-        s.accession_number,
-        s.study_desc,
-        s.study_date,
-        s.study_time, -- 👈 [เพิ่ม] Study Time
-        se.modality,
-        i.source_ae,
-        COUNT(DISTINCT s.study_uid_id) as study_count,
-        COUNT(i.instance_uid) as image_count,
-        SUM(CAST(i.file_size AS BIGINT)) as total_size_bytes 
-      FROM patient1 p
-      JOIN study1 s ON p.ptn_id_id = s.ptn_id_id
-      JOIN series1 se ON s.study_uid_id = se.study_uid_id
-      JOIN image1 i ON se.series_uid_id = i.series_uid_id
-      ${whereClause}
-      GROUP BY
-        p.ptn_id, p.ptn_name, s.accession_number, s.study_desc, s.study_date, s.study_time, se.modality, i.source_ae -- 👈 [เพิ่ม] Study Time
-    ),
-    CountedData AS (
-      SELECT *,
-        COUNT(*) OVER() as total_count
-      FROM GroupedData
-    )
-    SELECT *
-    FROM CountedData
+    SELECT 
+      ptn_id,
+      ptn_name,
+      accession_number,
+      study_desc,
+      study_date,
+      study_time,
+      modality,
+      source_ae,
+      study_count,
+      image_count,
+      total_size_bytes
+    FROM dbo.StudyUtilizationSummary
+    ${whereClause}
     ORDER BY study_date DESC, study_time DESC, ptn_id
     OFFSET @offset ROWS
     FETCH NEXT @limit ROWS ONLY
   `;
 
   try {
-    // 6. Execute the query
-    const result = await query(mainQuery, { ...params, offset, limit });
-    const studies = result.recordset;
+    // 6. Execute the queries (แยกกันเหมือนเดิม)
+    const countResult = await query(countQuery, params);
+    const dataResult = await query(mainQuery, { ...params, offset, limit });
 
-    const totalCount = studies.length > 0 ? studies[0].total_count : 0;
+    const studies = dataResult.recordset;
+    const totalCount = countResult.recordset[0]?.total_count || 0;
     const totalPages = Math.ceil(totalCount / limit);
 
     // 7. Send the successful JSON response
