@@ -8,10 +8,9 @@ import {
   Image,
   HardDrive,
   BarChart3,
-  Clock,
-  ClipboardList, // 👈 [ใหม่]
-  RefreshCw, // 👈 [ใหม่]
-  CheckCircle, // 👈 [ใหม่]
+  ClipboardList,
+  RefreshCw,
+  CheckCircle,
 } from "lucide-react";
 
 // (API ของคุณส่ง YYYYMMDD และ HHMMSS)
@@ -85,7 +84,7 @@ export default function DashboardPage() {
   return (
     <>
       <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">
-        Today's Dashboard
+        Today&apos;s Dashboard
       </h1>
 
       {/* ----- PACS Stat Cards ----- */}
@@ -224,7 +223,6 @@ export default function DashboardPage() {
             ) : data?.recentStudies?.length > 0 ? (
               data.recentStudies.map((study, index) => (
                 <tr
-                  // 👈 ใช้ index หรือ field ที่ unique กว่าถ้ามี
                   key={study.accession_number + index}
                   className="hover:bg-gray-50/50 dark:hover:bg-gray-700/50"
                 >

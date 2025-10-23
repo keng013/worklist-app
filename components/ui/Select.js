@@ -19,7 +19,7 @@ const Select = ({ label, name, options = [], ...props }) => (
       id={name}
       name={name}
       {...props}
-      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+      className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
     >
       {/* เพิ่มตัวเลือก "All" สำหรับการกรอง */}
       <option value="">All</option>

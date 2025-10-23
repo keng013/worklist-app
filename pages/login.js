@@ -49,7 +49,7 @@ export default function LoginPage() {
       {/* การ์ด Glass Morphism */}
       <div className="w-full max-w-md bg-white/30 backdrop-blur-md rounded-2xl shadow-2xl p-8 space-y-8">
         <div className="text-center">
-          <h2 className="text-4xl font-bold text-white">RKH PACS Admin</h2>
+          <h2 className="text-4xl font-bold text-white">PACS Admin Tools</h2>
           <p className="mt-2 text-white/80">
             Welcome back! Please sign in to continue.
           </p>

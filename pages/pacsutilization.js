@@ -1,15 +1,17 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react"; // Added useMemo
 import { apiClient } from "../lib/apiConfig";
 import { useWorklistRouter } from "../hooks/useWorklistRouter";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { getIronSession } from "iron-session";
 import { sessionOptions } from "../lib/session";
+
 // Import components
-import Select from "../components/ui/Select";
+// import Select from "../components/ui/Select"; // No longer used
 import Pagination from "../components/ui/Pagination";
 import SkeletonRows from "../components/ui/SkeletonRows";
-import DatePickerInput from "../components/ui/DatePickerInput";
+// DatePickerInput is no longer used
+// import DatePickerInput from "../components/ui/DatePickerInput";
 
 // ----- Helper Functions -----
 const formatDate = (dateInt) => {
@@ -25,8 +27,6 @@ const formatDate = (dateInt) => {
 
 const formatStudyTime = (timeNum) => {
   if (!timeNum && timeNum !== 0) return "";
-  // แปลง NUMERIC (เช่น 143000.123) -> "143000" -> "14:30:00"
-  // .toFixed(0) เพื่อตัดทศนิยม
   const timeStr = parseFloat(timeNum).toFixed(0).toString().padStart(6, "0");
   const hh = timeStr.substring(0, 2) || "00";
   const mm = timeStr.substring(2, 4) || "00";
@@ -40,6 +40,23 @@ const formatFileSize = (bytes) => {
   const mb = bytes / (1024 * 1024);
   return `${mb.toFixed(2)}`;
 };
+
+// --- Options for new dropdowns ---
+const monthDropdownOptions = [
+  // { value: "", label: "All Months" },
+  { value: "1", label: "January" },
+  { value: "2", label: "February" },
+  { value: "3", label: "March" },
+  { value: "4", label: "April" },
+  { value: "5", label: "May" },
+  { value: "6", label: "June" },
+  { value: "7", label: "July" },
+  { value: "8", label: "August" },
+  { value: "9", label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" },
+];
 // -----------------------------
 
 const PACSUtilizationPage = () => {
@@ -55,6 +72,17 @@ const PACSUtilizationPage = () => {
     totalPages: 1,
     limit: 10,
   });
+
+  // --- Generate Year Options ---
+  const yearDropdownOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const years = [{ value: currentYear, label: currentYear }];
+    for (let i = 0; i < 15; i++) {
+      const year = currentYear - i;
+      years.push({ value: year.toString(), label: year.toString() });
+    }
+    return years;
+  }, []);
 
   // 🔹 ดึง Source AEs และ Modalities มาใส่ Filter
   useEffect(() => {
@@ -80,15 +108,36 @@ const PACSUtilizationPage = () => {
       setIsLoading(true);
       setError(null);
       try {
-        const queryParams = { ...router.query };
-        if (queryParams.from_date) {
-          queryParams.start_date = queryParams.from_date;
-        }
-        if (queryParams.to_date) {
-          queryParams.end_date = queryParams.to_date;
-        }
+        // --- NEW: Logic for Month/Year filter ---
+        // 1. แยก month/year ออกจาก query ที่เหลือ
+        const { month, year, ...restQuery } = router.query;
 
-        const finalParams = new URLSearchParams(queryParams);
+        // 2. สร้าง URL params จาก filter ที่เหลือ (เช่น modality, source_ae)
+        const finalParams = new URLSearchParams(restQuery);
+
+        // 3. คำนวณ start_date และ end_date (YYYYMMDD) ถ้ามี
+        if (year && month) {
+          // ถ้าเลือกทั้งปีและเดือน
+          const yearNum = parseInt(year);
+          const monthNum = parseInt(month); // 1-12
+          // YYYYMM01
+          const startDate = `${year}${month.padStart(2, "0")}01`;
+          // วันสุดท้ายของเดือน
+          const lastDay = new Date(yearNum, monthNum, 0).getDate(); // 0th day of next month
+          const endDate = `${year}${month.padStart(2, "0")}${lastDay
+            .toString()
+            .padStart(2, "0")}`;
+
+          finalParams.append("start_date", startDate);
+          finalParams.append("end_date", endDate);
+        } else if (year) {
+          // ถ้าเลือกแค่ปี (ดึงข้อมูลทั้งปี)
+          finalParams.append("start_date", `${year}0101`);
+          finalParams.append("end_date", `${year}1231`);
+        }
+        // ถ้าไม่เลือกทั้งคู่ ก็จะไม่ส่ง start_date/end_date (ดึงทั้งหมด)
+        // --- End of new logic ---
+
         const res = await apiClient.get(
           `/api/pacsutilization?${finalParams.toString()}`
         );
@@ -110,8 +159,7 @@ const PACSUtilizationPage = () => {
     fetchData();
   }, [router.isReady, router.query]);
 
-  // 🔹 ฟังก์ชันจัดการ (อัปเดตล่าสุด)
-  // ฟังก์ชันนี้จะ "รวม" params ใหม่ (เช่น {page: 2}) เข้ากับ query เดิม (ที่มี filter) เสมอ
+  // 🔹 ฟังก์ชันจัดการ
   const handleNavigation = (newParams) => {
     router.push({ ...router.query, ...newParams });
   };
@@ -123,18 +171,16 @@ const PACSUtilizationPage = () => {
     for (const [key, value] of formData.entries()) {
       if (value) filters[key] = value;
     }
-    // ส่ง Filter ใหม่ พร้อมกับบังคับไปหน้า 1
     handleNavigation({ ...filters, page: 1 });
   };
 
   const handleLimitChange = (e) => {
-    // ส่ง Limit ใหม่ พร้อมกับบังคับไปหน้า 1 (query เดิมจะถูกเก็บไว้โดย handleNavigation)
     handleNavigation({ limit: e.target.value, page: 1 });
   };
 
   const handleReset = () => router.reset();
 
-  // 🔹 ฟังก์ชัน Export Excel
+  // 🔹 ฟังก์ชัน Export Excel (ไม่เปลี่ยนแปลง)
   const exportToExcel = () => {
     if (!data || data.length === 0) {
       alert("No data to export");
@@ -163,10 +209,6 @@ const PACSUtilizationPage = () => {
     );
   };
 
-  const defaultStartDate =
-    router.query.from_date || router.query.start_date || "";
-  const defaultEndDate = router.query.to_date || router.query.end_date || "";
-
   const tableHeaders = [
     "Patient ID",
     "Patient Name",
@@ -187,32 +229,98 @@ const PACSUtilizationPage = () => {
       <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border border-white/30 p-6 rounded-2xl shadow-xl mb-6">
         <form
           onSubmit={handleFilterSubmit}
-          key={JSON.stringify(router.query)} // 👈 Key สำหรับ Reset
+          key={JSON.stringify(router.query)}
         >
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* --- แถวที่ 1 --- */}
-            <DatePickerInput
-              label="From Date"
-              name="from_date"
-              defaultValue={defaultStartDate}
-            />
-            <DatePickerInput
-              label="To Date"
-              name="to_date"
-              defaultValue={defaultEndDate}
-            />
-            <Select
-              label="Source AE"
-              name="source_ae"
-              options={sourceAes}
-              defaultValue={router.query.source_ae}
-            />
-            <Select
-              label="Modality"
-              name="modality"
-              options={modalities}
-              defaultValue={router.query.modality}
-            />
+            {/* --- REPLACED: Month Dropdown --- */}
+            <div>
+              <label
+                htmlFor="month"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+              >
+                Month
+              </label>
+              <select
+                id="month"
+                name="month"
+                defaultValue={router.query.month || ""}
+                className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              >
+                {monthDropdownOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* --- REPLACED: Year Dropdown --- */}
+            <div>
+              <label
+                htmlFor="year"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+              >
+                Year
+              </label>
+              <select
+                id="year"
+                name="year"
+                defaultValue={router.query.year || ""}
+                className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              >
+                {yearDropdownOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* --- REPLACED: Source AE Dropdown --- */}
+            <div>
+              <label
+                htmlFor="source_ae"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+              >
+                Source AE
+              </label>
+              <select
+                id="source_ae"
+                name="source_ae"
+                defaultValue={router.query.source_ae || ""}
+                className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              >
+                <option value="">All Source AEs</option>
+                {sourceAes.map((ae) => (
+                  <option key={ae} value={ae}>
+                    {ae}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* --- REPLACED: Modality Dropdown --- */}
+            <div>
+              <label
+                htmlFor="modality"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+              >
+                Modality
+              </label>
+              <select
+                id="modality"
+                name="modality"
+                defaultValue={router.query.modality || ""}
+                className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              >
+                <option value="">All Modalities</option>
+                {modalities.map((mod) => (
+                  <option key={mod} value={mod}>
+                    {mod}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             {/* --- แถวที่ 2 (ปุ่ม) --- */}
             <div className="md:col-span-2"></div>
@@ -306,7 +414,7 @@ const PACSUtilizationPage = () => {
                   <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowrap">
                     {formatStudyTime(item.study_time)}
                   </td>
-                  <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowGrap">
+                  <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowRrap">
                     {item.source_ae}
                   </td>
                   <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowrap">
