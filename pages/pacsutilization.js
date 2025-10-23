@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react"; // Added useMemo
+import React, { useState, useEffect, useMemo } from "react";
 import { apiClient } from "../lib/apiConfig";
 import { useWorklistRouter } from "../hooks/useWorklistRouter";
 import * as XLSX from "xlsx";
@@ -7,11 +7,8 @@ import { getIronSession } from "iron-session";
 import { sessionOptions } from "../lib/session";
 
 // Import components
-// import Select from "../components/ui/Select"; // No longer used
 import Pagination from "../components/ui/Pagination";
 import SkeletonRows from "../components/ui/SkeletonRows";
-// DatePickerInput is no longer used
-// import DatePickerInput from "../components/ui/DatePickerInput";
 
 // ----- Helper Functions -----
 const formatDate = (dateInt) => {
@@ -43,7 +40,6 @@ const formatFileSize = (bytes) => {
 
 // --- Options for new dropdowns ---
 const monthDropdownOptions = [
-  // { value: "", label: "All Months" },
   { value: "1", label: "January" },
   { value: "2", label: "February" },
   { value: "3", label: "March" },
@@ -73,10 +69,10 @@ const PACSUtilizationPage = () => {
     limit: 10,
   });
 
-  // --- Generate Year Options ---
+  // --- Generate Year Options (Fixed duplicate year) ---
   const yearDropdownOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
-    const years = [{ value: currentYear, label: currentYear }];
+    const years = [];
     for (let i = 0; i < 15; i++) {
       const year = currentYear - i;
       years.push({ value: year.toString(), label: year.toString() });
@@ -85,6 +81,7 @@ const PACSUtilizationPage = () => {
   }, []);
 
   // 🔹 ดึง Source AEs และ Modalities มาใส่ Filter
+  // 🔹 ดึง Source AEs และ Modalities มาใส่ Filter
   useEffect(() => {
     const fetchFilters = async () => {
       try {
@@ -92,8 +89,17 @@ const PACSUtilizationPage = () => {
           apiClient.get("/api/sourceaes"),
           apiClient.get("/api/modalities"),
         ]);
-        setSourceAes(aeRes.data.sourceAes || []);
-        setModalities(modRes.data.modalities || []);
+
+        // 👇 [แก้] ให้รับ aeRes.data (ที่เป็น Array) ตรงๆ
+        setSourceAes(aeRes.data || []);
+        // 👇 [แก้] ให้รับ modRes.data (ที่เป็น Array) ตรงๆ
+        setModalities(modRes.data || []);
+
+        // 👇 [แก้ไข] Log ข้อมูลที่ได้มาจริงๆ
+        console.log("Fetched filter data:", {
+          sourceAes: aeRes.data || [],
+          modalities: modRes.data || [],
+        });
       } catch (err) {
         console.error("Failed to fetch filter data", err);
       }
@@ -109,33 +115,23 @@ const PACSUtilizationPage = () => {
       setError(null);
       try {
         // --- NEW: Logic for Month/Year filter ---
-        // 1. แยก month/year ออกจาก query ที่เหลือ
         const { month, year, ...restQuery } = router.query;
-
-        // 2. สร้าง URL params จาก filter ที่เหลือ (เช่น modality, source_ae)
         const finalParams = new URLSearchParams(restQuery);
 
-        // 3. คำนวณ start_date และ end_date (YYYYMMDD) ถ้ามี
         if (year && month) {
-          // ถ้าเลือกทั้งปีและเดือน
           const yearNum = parseInt(year);
           const monthNum = parseInt(month); // 1-12
-          // YYYYMM01
           const startDate = `${year}${month.padStart(2, "0")}01`;
-          // วันสุดท้ายของเดือน
-          const lastDay = new Date(yearNum, monthNum, 0).getDate(); // 0th day of next month
+          const lastDay = new Date(yearNum, monthNum, 0).getDate();
           const endDate = `${year}${month.padStart(2, "0")}${lastDay
             .toString()
             .padStart(2, "0")}`;
-
           finalParams.append("start_date", startDate);
           finalParams.append("end_date", endDate);
         } else if (year) {
-          // ถ้าเลือกแค่ปี (ดึงข้อมูลทั้งปี)
           finalParams.append("start_date", `${year}0101`);
           finalParams.append("end_date", `${year}1231`);
         }
-        // ถ้าไม่เลือกทั้งคู่ ก็จะไม่ส่ง start_date/end_date (ดึงทั้งหมด)
         // --- End of new logic ---
 
         const res = await apiClient.get(
@@ -147,7 +143,10 @@ const PACSUtilizationPage = () => {
           totalCount: res.data.totalCount || 0,
           currentPage: res.data.currentPage || 1,
           totalPages: res.data.totalPages || 1,
-          limit: parseInt(router.query.limit) || 10,
+          limit:
+            router.query.limit === "all"
+              ? "all"
+              : parseInt(router.query.limit) || 10,
         });
       } catch (err) {
         console.error(err);
@@ -227,11 +226,12 @@ const PACSUtilizationPage = () => {
     <>
       {/* 🔍 Filter Form */}
       <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border border-white/30 p-6 rounded-2xl shadow-xl mb-6">
-        <form
-          onSubmit={handleFilterSubmit}
-          key={JSON.stringify(router.query)}
-        >
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <form onSubmit={handleFilterSubmit} key={JSON.stringify(router.query)}>
+          {/* [Responsive Change 1]
+            เปลี่ยน grid-cols-1 md:grid-cols-4 
+            เป็น grid-cols-1 sm:grid-cols-2 lg:grid-cols-4
+          */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* --- REPLACED: Month Dropdown --- */}
             <div>
               <label
@@ -322,29 +322,23 @@ const PACSUtilizationPage = () => {
               </select>
             </div>
 
-            {/* --- แถวที่ 2 (ปุ่ม) --- */}
-            <div className="md:col-span-2"></div>
-            <div>
-              <label className="block text-sm font-medium text-transparent">
-                &nbsp;
-              </label>
-              <button
-                type="submit"
-                className="mt-1 w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md shadow transition"
-              >
-                Search
-              </button>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-transparent">
-                &nbsp;
-              </label>
+            {/* [Responsive Change 2]
+              แทนที่ div ว่างๆ และ div ของปุ่ม 2 ปุ่ม
+              ด้วย div ใหม่ที่จัดกลุ่มปุ่มและจัดเรียง responsive
+            */}
+            <div className="sm:col-span-2 lg:col-span-4 flex flex-col sm:flex-row sm:justify-end gap-4 mt-2">
               <button
                 type="button"
                 onClick={handleReset}
-                className="mt-1 w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-md shadow transition"
+                className="w-full sm:w-auto bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-md shadow transition"
               >
                 Reset
+              </button>
+              <button
+                type="submit"
+                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md shadow transition"
+              >
+                Search
               </button>
             </div>
           </div>
@@ -393,19 +387,26 @@ const PACSUtilizationPage = () => {
             ) : data.length > 0 ? (
               data.map((item, index) => (
                 <tr
-                  key={`${item.accession_number}-${item.modality}-${index}`}
+                  // [Fix] แก้ Key ให้ Unique มากขึ้น (ป้องกัน Warning)
+                  key={`${item.accession_number}-${item.modality}-${item.source_ae}-${item.ptn_id}`}
                   className="hover:bg-gray-50/50 dark:hover:bg-gray-700/50"
                 >
                   <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowrap">
                     {item.ptn_id}
                   </td>
-                  <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowrap">
+                  {/* [Responsive Change 3]
+                    ลบ whitespace-nowrap เพื่อให้ตัดคำได้
+                  */}
+                  <td className="px-6 py-4 text-sm dark:text-gray-200">
                     {item.ptn_name}
                   </td>
                   <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowrap">
                     {item.accession_number}
                   </td>
-                  <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowrap">
+                  {/* [Responsive Change 3]
+                    ลบ whitespace-nowrap เพื่อให้ตัดคำได้
+                  */}
+                  <td className="px-6 py-4 text-sm dark:text-gray-200">
                     {item.study_desc}
                   </td>
                   <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowrap">
@@ -414,7 +415,9 @@ const PACSUtilizationPage = () => {
                   <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowrap">
                     {formatStudyTime(item.study_time)}
                   </td>
-                  <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowRrap">
+                  {/* [Fix] แก้ Typo "nowRrap" -> "nowrap"
+                   */}
+                  <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowrap">
                     {item.source_ae}
                   </td>
                   <td className="px-6 py-4 text-sm dark:text-gray-200 whitespace-nowrap">

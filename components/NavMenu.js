@@ -36,8 +36,9 @@ export default function NavMenu({ isCollapsed, setIsCollapsed }) {
         backdrop-blur-lg 
         border border-white/30
         transition-all duration-300 ease-in-out
+        z-50 
         ${isCollapsed ? "w-20" : "w-64"} 
-      `}
+      `} // 👈 [เพิ่ม] z-50 เพื่อให้ NavMenu อยู่ชั้นบนสุดเสมอ
     >
       {/* Button */}
       <button

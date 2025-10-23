@@ -2,11 +2,15 @@ import { getIronSession } from "iron-session";
 import { sessionOptions } from "../../lib/session";
 import { query } from "../../lib/db";
 
-// ✅ แปลงวันที่เป็น integer (ถ้าจำเป็น)
+// Helper to convert YYYY-MM-DD (หรือ YYYYMMDD) to YYYYMMDD integer
 const convertDateToInteger = (dateStr) => {
   if (!dateStr) return null;
-  return parseInt(dateStr.replace(/-/g, ""), 10);
+  // รองรับทั้ง "2025-10-23" และ "20251023"
+  const cleanedStr = dateStr.toString().replace(/-/g, "");
+  if (cleanedStr.length !== 8) return null;
+  return parseInt(cleanedStr, 10);
 };
+
 export default async function handler(req, res) {
   const session = await getIronSession(req, res, sessionOptions);
   const user = session.user;
@@ -15,30 +19,27 @@ export default async function handler(req, res) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
+  // 2. Extract query parameters
   const { source_ae, modality } = req.query;
   let { start_date, end_date } = req.query;
+
+  // --- ⭐️ [แก้ไข] ตรวจสอบ "All" ---
+  const isFetchingAll = req.query.limit === "all";
+
+  // (parseInt("all") จะได้ NaN, NaN || 10 = 10 ซึ่งปลอดภัย)
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
 
-  if (!start_date || !end_date) {
-    const today = new Date();
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(today.getDate() - 7);
-    start_date = sevenDaysAgo.toISOString().split("T")[0];
-    end_date = today.toISOString().split("T")[0];
-  }
-
-  // 4. Build WHERE clause (ปรับเล็กน้อย)
-  const conditions = [];
-  const params = {};
-
+  // 3. (เปลี่ยนชื่อ) Set date range (Frontend ส่ง YYYYMMDD มาแล้ว)
   const startDateInt = convertDateToInteger(start_date);
   const endDateInt = convertDateToInteger(end_date);
 
+  // 4. Build WHERE clause
+  const conditions = [];
+  const params = {};
+
   if (startDateInt) {
-    // ❌ ไม่ใช้ s.study_date
-    // ✅ ใช้ study_date
     conditions.push("study_date >= @start_date");
     params.start_date = startDateInt;
   }
@@ -47,14 +48,10 @@ export default async function handler(req, res) {
     params.end_date = endDateInt;
   }
   if (source_ae) {
-    // ❌ ไม่ใช้ i.source_ae
-    // ✅ ใช้ source_ae
     conditions.push("source_ae = @source_ae");
     params.source_ae = source_ae;
   }
   if (modality) {
-    // ❌ ไม่ใช้ se.modality
-    // ✅ ใช้ modality
     conditions.push("modality = @modality");
     params.modality = modality;
   }
@@ -62,14 +59,28 @@ export default async function handler(req, res) {
   const whereClause =
     conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-  // 5. [ปรับปรุง] Construct SQL queries (ง่ายขึ้นมาก!)
+  // 5. Construct SQL queries
 
+  // 5.1 Count query (ไม่เปลี่ยนแปลง)
   const countQuery = `
     SELECT COUNT(*) as total_count 
     FROM dbo.StudyUtilizationSummary
     ${whereClause}
   `;
 
+  // --- ⭐️ [แก้ไข] สร้าง SQL สำหรับแบ่งหน้าแบบไดนามิก ---
+  let paginationSql = `
+    ORDER BY study_date DESC, study_time DESC, ptn_id
+    OFFSET @offset ROWS
+    FETCH NEXT @limit ROWS ONLY
+  `;
+
+  if (isFetchingAll) {
+    // ถ้าขอ "All", ให้ลบ OFFSET/FETCH ทิ้งไป
+    paginationSql = `ORDER BY study_date DESC, study_time DESC, ptn_id`;
+  }
+
+  // 5.2 Main data query
   const mainQuery = `
     SELECT 
       ptn_id,
@@ -85,26 +96,40 @@ export default async function handler(req, res) {
       total_size_bytes
     FROM dbo.StudyUtilizationSummary
     ${whereClause}
-    ORDER BY study_date DESC, study_time DESC, ptn_id
-    OFFSET @offset ROWS
-    FETCH NEXT @limit ROWS ONLY
+    ${paginationSql} -- 👈 [แก้ไข] ใช้ SQL ที่สร้างแบบไดนามิก
   `;
 
   try {
-    // 6. Execute the queries (แยกกันเหมือนเดิม)
+    // 6. Execute queries
     const countResult = await query(countQuery, params);
-    const dataResult = await query(mainQuery, { ...params, offset, limit });
+
+    // --- ⭐️ [แก้ไข] กำหนดพารามิเตอร์สำหรับ main query ---
+    let mainQueryParams = { ...params, offset, limit };
+    if (isFetchingAll) {
+      // ถ้า "All", ไม่ต้องส่ง offset/limit
+      mainQueryParams = params;
+    }
+
+    const dataResult = await query(mainQuery, mainQueryParams);
 
     const studies = dataResult.recordset;
     const totalCount = countResult.recordset[0]?.total_count || 0;
-    const totalPages = Math.ceil(totalCount / limit);
+
+    // --- ⭐️ [แก้ไข] ปรับค่า totalPages ถ้าเป็น "All" ---
+    let responsePage = page;
+    let responseTotalPages = Math.ceil(totalCount / limit); // (limit ที่เป็น NaN || 10)
+
+    if (isFetchingAll) {
+      responsePage = 1;
+      responseTotalPages = 1; // ถ้าดึงมาทั้งหมด ก็มีแค่หน้าเดียว
+    }
 
     // 7. Send the successful JSON response
     res.status(200).json({
       studies,
       totalCount,
-      currentPage: page,
-      totalPages,
+      currentPage: responsePage, // 👈 [แก้ไข]
+      totalPages: responseTotalPages, // 👈 [แก้ไข]
     });
   } catch (error) {
     console.error("API PACS Utilization Error:", error);

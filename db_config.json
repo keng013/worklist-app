@@ -1,7 +1,7 @@
 {
-  "db_host": "192.168.1.98",
+  "db_host": "10.134.12.2",
   "db_port": "1433",
   "db_name": "DICOMDB",
-  "db_user": "dicom",
-  "db_pass": "d0d17625f50a64228e7812dd1bd3075b:766e26d3499ed318c1bb3e2a8f345176"
+  "db_user": "mdservice",
+  "db_pass": "772e67d0c16a1c5dbd63b61f4e35b694:b045a2e6372d1480038d0fb4138e220f"
 }

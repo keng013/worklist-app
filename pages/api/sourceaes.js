@@ -1,34 +1,30 @@
 import { getIronSession } from "iron-session";
 import { sessionOptions } from "../../lib/session";
-import { query } from "../../lib/db"; // 👈 ตรวจสอบ path
+import { query } from "../../lib/db";
 
 export default async function handler(req, res) {
+  // 1. Authentication Check (สำคัญมาก!)
   const session = await getIronSession(req, res, sessionOptions);
-  const user = session.user;
-
-  // 1. Authentication Check
-  if (!user || !user.isLoggedIn) {
+  if (!session.user || !session.user.isLoggedIn) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
-  // 2. Query เพื่อดึง Source AEs
   try {
-    const sql = `
-      SELECT DISTINCT source_ae 
-      FROM image1 
-      WHERE source_ae IS NOT NULL AND source_ae != ''
+    // 2. Query ข้อมูลที่ไม่ซ้ำกันจากตารางสรุป
+    const sqlQuery = `
+      SELECT DISTINCT source_ae
+      FROM dbo.StudyUtilizationSummary
       ORDER BY source_ae ASC
     `;
 
-    const result = await query(sql, {});
+    const result = await query(sqlQuery);
 
-    // แปลง [{ source_ae: 'AE1' }, { source_ae: 'AE2' }]
-    // เป็น ['AE1', 'AE2']
-    const sourceAes = result.recordset.map((item) => item.source_ae);
+    // 3. Map ผลลัพธ์ให้เป็น Array ของ String
+    const sourceAEs = result.recordset.map((row) => row.source_ae);
 
-    res.status(200).json({ sourceAes: sourceAes });
+    res.status(200).json(sourceAEs);
   } catch (error) {
-    console.error("API SourceAEs Error:", error);
-    res.status(500).json({ message: "Failed to fetch source AEs." });
+    console.error("API /api/sourceaes Error:", error);
+    res.status(500).json({ message: "Failed to fetch source AEs" });
   }
 }
