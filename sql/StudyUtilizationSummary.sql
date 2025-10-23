@@ -122,7 +122,8 @@ GO
 -- ตัวอย่างการเรียกใช้ Stored Procedure
 -- EXEC sp_UpdateUtilizationSummary @StartDate = 20240101, @EndDate = 20240630;
 -------------------------------------------------------------/
--- คำนวณวันที่ของเมื่อวาน (รูปแบบ YYYYMMDD)
+-- คำนวณวันที่ของเมื่อวาน (รูปแบบ YYYYMMDD) สร้างเป็น schedule job หรือรันด้วยตนเอง
+
 DECLARE @Yesterday INT = CONVERT(INT, CONVERT(VARCHAR(8), GETDATE() - 1, 112));
 EXEC sp_UpdateUtilizationSummary @StartDate = @Yesterday, @EndDate = @Yesterday;
 
