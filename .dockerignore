@@ -1,0 +1,11 @@
+# ไม่ต้อง copy node_modules ของเครื่องคุณ
+node_modules
+
+# ไม่ต้อง copy โฟลเดอร์ build ที่อาจจะค้างอยู่
+.next
+
+# ไม่ต้อง copy git
+.git
+
+# ไม่ต้อง copy ไฟล์ env (เราจะใช้วิธีอื่น)
+.env.local
