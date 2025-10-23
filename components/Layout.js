@@ -11,6 +11,7 @@ export default function Layout({
 }) {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-blue-200 via-indigo-200 to-purple-300">
+      {" "}
       {/* NavMenu (Sidebar) 
         [แก้] เพิ่ม 'hidden md:flex' เพื่อซ่อนในจอมือถือ 
       */}
@@ -19,7 +20,6 @@ export default function Layout({
         setIsCollapsed={setIsCollapsed}
         className="hidden md:flex" // 👈 เพิ่มคลาสนี้เพื่อซ่อนในจอมือถือ
       />
-
       {/* Main Content */}
       <div
         className={`flex-1 flex flex-col transition-all duration-300 ease-in-out 
